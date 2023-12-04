@@ -17,8 +17,11 @@ limitations under the License.
 package goversion
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"os/exec"
+	"regexp"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -34,6 +37,8 @@ type Info struct {
 	ModuleSum    string `json:"moduleCheksum"`
 	GitCommit    string `json:"gitCommit"`
 	GitTreeState string `json:"gitTreeState"`
+	GitBranch    string `json:"gitBranch"`
+	GitFlow      bool   `json:"gitFlow"`
 	BuildDate    string `json:"buildDate"`
 	BuiltBy      string `json:"builtBy"`
 	GoVersion    string `json:"goVersion"`
@@ -82,6 +87,22 @@ func getDirty(bi *debug.BuildInfo) string {
 	return ""
 }
 
+func getBranch(bi *debug.BuildInfo) string {
+	vcs := getKey(bi, "vcs")
+	if strings.ToLower(vcs) == "git" {
+		out := bytes.Buffer{}
+		cmd := exec.Command("git", "branch", "--show-current")
+		cmd.Stdout = &out
+		err := cmd.Run()
+		if err != nil {
+			return ""
+		} else {
+			return strings.TrimSpace(out.String())
+		}
+	}
+	return ""
+}
+
 func getBuildDate(bi *debug.BuildInfo) string {
 	buildTime := getKey(bi, "vcs.time")
 	t, err := time.Parse("2006-01-02T15:04:05Z", buildTime)
@@ -112,7 +133,7 @@ func firstNonEmpty(ss ...string) string {
 	return ""
 }
 
-// Option can be used to customize the version after its gathered from the
+// Option can be used to customize the version after it is gathered from the
 // environment.
 type Option func(i *Info)
 
@@ -139,6 +160,13 @@ func WithBuiltBy(name string) Option {
 	}
 }
 
+// WithGitFlowEnabled modify version by vcs flow
+func WithGitFlowEnabled(enabled bool) Option {
+	return func(i *Info) {
+		i.GitFlow = true
+	}
+}
+
 // TODO: write more WithXXX functions?
 
 // GetVersionInfo represents known information on how this binary was built.
@@ -149,6 +177,7 @@ func GetVersionInfo(options ...Option) Info {
 		ModuleSum:    firstNonEmpty(buildInfo.Main.Sum, unknown),
 		GitCommit:    firstNonEmpty(getCommit(buildInfo), unknown),
 		GitTreeState: firstNonEmpty(getDirty(buildInfo), unknown),
+		GitBranch:    firstNonEmpty(getBranch(buildInfo), unknown),
 		BuildDate:    firstNonEmpty(getBuildDate(buildInfo), unknown),
 		BuiltBy:      unknown,
 		GoVersion:    runtime.Version(),
@@ -158,7 +187,42 @@ func GetVersionInfo(options ...Option) Info {
 	for _, opt := range options {
 		opt(&i)
 	}
+	if i.GitFlow {
+		i.GitVersion = computeGitFlowVersion(i.GitVersion, i.GitBranch, i.GitCommit)
+	}
 	return i
+}
+
+const DEFAULT_GITFLOW_MARKER = "SNAPSHOT"
+
+var gitFlowSettings = map[string]string{
+	"master":               "",
+	"main":                 "",
+	"feature/.+":           "M",
+	"hotfix/.+|release/.+": "RC",
+}
+
+func computeGitFlowVersion(version string, branch string, commit string) string {
+	if version == unknown || branch == unknown || commit == unknown {
+		return version
+	}
+	marker := findGitFlowMarker(branch)
+	metadata := ""
+	if marker != "" {
+		marker = "-" + marker
+		metadata = "+" + commit[0:7]
+	}
+	return fmt.Sprintf("%s%s%s", version, marker, metadata)
+}
+
+func findGitFlowMarker(branch string) string {
+	for key, val := range gitFlowSettings {
+		compile := regexp.MustCompile(key)
+		if compile.MatchString(branch) {
+			return val
+		}
+	}
+	return DEFAULT_GITFLOW_MARKER
 }
 
 // String returns the string representation of the version info
@@ -184,6 +248,8 @@ func (i Info) String() string {
 	_, _ = fmt.Fprintf(w, "GitVersion:\t%s\n", i.GitVersion)
 	_, _ = fmt.Fprintf(w, "GitCommit:\t%s\n", i.GitCommit)
 	_, _ = fmt.Fprintf(w, "GitTreeState:\t%s\n", i.GitTreeState)
+	_, _ = fmt.Fprintf(w, "GitBranch:\t%s\n", i.GitBranch)
+	_, _ = fmt.Fprintf(w, "GitFlow:\t%v\n", i.GitFlow)
 	_, _ = fmt.Fprintf(w, "BuildDate:\t%s\n", i.BuildDate)
 	_, _ = fmt.Fprintf(w, "BuiltBy:\t%s\n", i.BuiltBy)
 	_, _ = fmt.Fprintf(w, "GoVersion:\t%s\n", i.GoVersion)

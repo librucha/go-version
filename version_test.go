@@ -18,6 +18,7 @@ package goversion
 
 import (
 	"runtime/debug"
+	"strings"
 	"testing"
 	"time"
 )
@@ -52,6 +53,104 @@ func TestVersionJSON(t *testing.T) {
 		t.Fatal("should not be empty")
 	}
 	t.Log("\n" + string(json))
+}
+
+func TestGitFlowVersion(t *testing.T) {
+	version := "1.0.0"
+	commit := "02af8e0619ca3f625bfbc25e60289e0eba222c35"
+	rcVersion := version + "-RC+" + commit[0:7]
+	milestoneVersion := version + "-M+" + commit[0:7]
+	snapshotVersion := version + "-SNAPSHOT+" + commit[0:7]
+	t.Run("main git flow", func(t *testing.T) {
+		sut := GetVersionInfo(
+			WithASCIIName(art),
+			WithAppDetails("test", "a test description", "https://carlosbecker.com"),
+			WithBuiltBy("nixpkgs"),
+			WithGitFlowEnabled(true),
+			func(i *Info) {
+				i.GitVersion = version
+				i.GitCommit = commit
+				i.GitBranch = "main"
+			},
+		)
+		t.Log("\n" + sut.String())
+		got := sut.GitVersion
+		if got != version {
+			t.Fatalf("expected %q but got %q", version, got)
+		}
+	})
+	t.Run("master git flow", func(t *testing.T) {
+		sut := GetVersionInfo(
+			WithASCIIName(art),
+			WithAppDetails("test", "a test description", "https://carlosbecker.com"),
+			WithBuiltBy("nixpkgs"),
+			WithGitFlowEnabled(true),
+			func(i *Info) {
+				i.GitVersion = version
+				i.GitCommit = commit
+				i.GitBranch = "master"
+			},
+		)
+		t.Log("\n" + sut.String())
+		got := sut.GitVersion
+		if got != version {
+			t.Fatalf("expected %q but got %q", version, got)
+		}
+	})
+	t.Run("feature git flow", func(t *testing.T) {
+		sut := GetVersionInfo(
+			WithASCIIName(art),
+			WithAppDetails("test", "a test description", "https://carlosbecker.com"),
+			WithBuiltBy("nixpkgs"),
+			WithGitFlowEnabled(true),
+			func(i *Info) {
+				i.GitVersion = version
+				i.GitCommit = commit
+				i.GitBranch = "feature/new-model"
+			},
+		)
+		t.Log("\n" + sut.String())
+		got := sut.GitVersion
+		if got != milestoneVersion {
+			t.Fatalf("expected %q but got %q", milestoneVersion, got)
+		}
+	})
+	t.Run("release git flow", func(t *testing.T) {
+		sut := GetVersionInfo(
+			WithASCIIName(art),
+			WithAppDetails("test", "a test description", "https://carlosbecker.com"),
+			WithBuiltBy("nixpkgs"),
+			WithGitFlowEnabled(true),
+			func(i *Info) {
+				i.GitVersion = version
+				i.GitCommit = commit
+				i.GitBranch = "release/1.0.0"
+			},
+		)
+		t.Log("\n" + sut.String())
+		got := sut.GitVersion
+		if got != rcVersion {
+			t.Fatalf("expected %q but got %q", rcVersion, got)
+		}
+	})
+	t.Run("other git flow", func(t *testing.T) {
+		sut := GetVersionInfo(
+			WithASCIIName(art),
+			WithAppDetails("test", "a test description", "https://carlosbecker.com"),
+			WithBuiltBy("nixpkgs"),
+			WithGitFlowEnabled(true),
+			func(i *Info) {
+				i.GitVersion = version
+				i.GitCommit = commit
+				i.GitBranch = "develop"
+			},
+		)
+		t.Log("\n" + sut.String())
+		got := sut.GitVersion
+		if got != snapshotVersion {
+			t.Fatalf("expected %q but got %q", snapshotVersion, got)
+		}
+	})
 }
 
 func TestGetGitVersion(t *testing.T) {
@@ -114,6 +213,26 @@ func TestGetDirty(t *testing.T) {
 			},
 		}); got != "clean" {
 			t.Fatalf("expected clean, got %q", got)
+		}
+	})
+}
+
+func TestGetBranch(t *testing.T) {
+	t.Run(unknown, func(t *testing.T) {
+		if got := getBranch(&debug.BuildInfo{}); got != "" {
+			t.Fatalf("expected empty string, got %q", got)
+		}
+	})
+	t.Run("current", func(t *testing.T) {
+		if got := getBranch(&debug.BuildInfo{
+			Settings: []debug.BuildSetting{
+				{
+					Key:   "vcs",
+					Value: "git",
+				},
+			},
+		}); len(strings.TrimSpace(got)) < 1 {
+			t.Fatalf("expected non blank, got %q", got)
 		}
 	})
 }
