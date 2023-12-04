@@ -1,3 +1,3 @@
-module github.com/caarlos0/go-version
+module github.com/librucha/go-version
 
-go 1.20
+go 1.21

@@ -17,8 +17,8 @@ limitations under the License.
 package goversion
 
 import (
+	"os/exec"
 	"runtime/debug"
-	"strings"
 	"testing"
 	"time"
 )
@@ -224,6 +224,11 @@ func TestGetBranch(t *testing.T) {
 		}
 	})
 	t.Run("current", func(t *testing.T) {
+		branch := "test-branch"
+		err := exec.Command("git", "switch", "-C", branch).Run()
+		if err != nil {
+			t.SkipNow()
+		}
 		if got := getBranch(&debug.BuildInfo{
 			Settings: []debug.BuildSetting{
 				{
@@ -231,8 +236,8 @@ func TestGetBranch(t *testing.T) {
 					Value: "git",
 				},
 			},
-		}); len(strings.TrimSpace(got)) < 1 {
-			t.Fatalf("expected non blank, got %q", got)
+		}); got != branch {
+			t.Fatalf("expected %q, got %q", branch, got)
 		}
 	})
 }
